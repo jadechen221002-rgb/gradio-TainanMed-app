@@ -13,14 +13,30 @@ import gradio as gr
 import pandas as pd
 import requests
 import urllib3
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse
-from fastapi.staticfiles import StaticFiles
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 BASE_DIR = Path(__file__).parent
-PWA_DIR = BASE_DIR / "pwa"
+
+# 圖示白名單(同時避免把 app.py 等原始碼對外公開)
+ICON_FILES = {
+    "icon-192.png",
+    "icon-512.png",
+    "icon-maskable-512.png",
+    "apple-touch-icon.png",
+}
+
+
+def find_file(name: str) -> Path:
+    """相容兩種目錄結構:
+    1) pwa/ 與 pwa/icons/ 子資料夾  2) 全部檔案平放在專案根目錄"""
+    for folder in (BASE_DIR / "pwa" / "icons", BASE_DIR / "pwa", BASE_DIR):
+        f = folder / name
+        if f.is_file():
+            return f
+    raise HTTPException(status_code=404, detail=f"{name} not found")
 
 DEFAULT_URL = os.environ.get(
     "DEFAULT_CSV_URL",
@@ -254,7 +270,7 @@ app = FastAPI(title="Tainan Open Data PWA")
 @app.get("/manifest.webmanifest", include_in_schema=False)
 def manifest():
     return FileResponse(
-        PWA_DIR / "manifest.webmanifest",
+        find_file("manifest.webmanifest"),
         media_type="application/manifest+json",
         headers={"Cache-Control": "no-cache"},
     )
@@ -264,7 +280,7 @@ def manifest():
 def service_worker():
     # 必須從網站根目錄提供,Service Worker 的 scope 才能涵蓋整站
     return FileResponse(
-        PWA_DIR / "sw.js",
+        find_file("sw.js"),
         media_type="application/javascript",
         headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
     )
@@ -272,7 +288,7 @@ def service_worker():
 
 @app.get("/offline", include_in_schema=False)
 def offline():
-    return FileResponse(PWA_DIR / "offline.html", media_type="text/html")
+    return FileResponse(find_file("offline.html"), media_type="text/html")
 
 
 @app.get("/healthz", include_in_schema=False)
@@ -280,7 +296,12 @@ def healthz():
     return PlainTextResponse("ok")
 
 
-app.mount("/pwa", StaticFiles(directory=PWA_DIR), name="pwa")
+@app.get("/pwa/icons/{name}", include_in_schema=False)
+def icons(name: str):
+    if name not in ICON_FILES:
+        raise HTTPException(status_code=404)
+    return FileResponse(find_file(name), media_type="image/png")
+
 
 # Gradio 掛載在根路徑(需在其他路由之後)
 app = gr.mount_gradio_app(app, demo, path="/")
