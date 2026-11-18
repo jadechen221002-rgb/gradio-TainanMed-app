@@ -1,7 +1,8 @@
-# 🏯 台南市開放資料檢視器
+# 🏯 台南市開放資料檢視器（PWA + RWD）
 
 以 [Gradio](https://www.gradio.app/) 打造的網頁工具，可下載台南市政府資料開放平台的 CSV，
 進行空值清理、關鍵字搜尋、欄位篩選，並下載篩選後的結果。
+支援 **PWA（可安裝到手機／桌面）** 與 **RWD（手機、平板、桌機自適應）**。
 
 ## 功能
 
@@ -12,13 +13,37 @@
 - 欄位資訊摘要（型態、非空值數、不重複值數）
 - 下載目前篩選結果為 CSV
 
+### PWA
+
+- Web App Manifest（名稱、主題色、圖示、standalone 模式）
+- Service Worker：離線備援頁、Gradio 前端靜態檔快取
+- 「📲 安裝 App」浮動按鈕（Chrome／Edge／Android）
+- iOS Safari：點分享 → **加入主畫面**
+- 含 maskable 圖示與 Apple Touch Icon
+
+> 資料載入與搜尋需要連線伺服器，因此離線時會顯示離線提示頁，不會有離線資料查詢。
+
+### RWD
+
+- 手機（≤640px）：所有欄位直向堆疊、按鈕滿版、加大觸控區、輸入框 16px 避免 iOS 自動放大
+- 平板／桌機：最大寬度 1200px 置中
+- 表格橫向捲動，不撐破版面
+- 支援瀏海螢幕安全區（`safe-area-inset`）
+- 自動使用系統淺色／深色主題
+
 ## 專案結構
 
 ```
 .
-├── app.py             # Gradio 主程式
-├── requirements.txt   # 套件清單
-├── render.yaml        # Render Blueprint 設定（選用）
+├── app.py                      # Gradio + FastAPI 主程式
+├── pwa/
+│   ├── manifest.webmanifest    # PWA 設定
+│   ├── sw.js                   # Service Worker
+│   ├── offline.html            # 離線備援頁
+│   └── icons/                  # 192 / 512 / maskable / apple-touch
+├── make_icons.py               # 圖示產生腳本（選用，需 Pillow）
+├── requirements.txt
+├── render.yaml                 # Render Blueprint
 └── README.md
 ```
 
@@ -33,30 +58,34 @@ python app.py
 
 開啟 http://localhost:7860
 
+> Service Worker 只能在 **HTTPS** 或 **localhost** 運作，部署到 Render 後預設就是 HTTPS。
+
 ## 部署到 Render
 
 ### 方法一：Blueprint（推薦）
 
 1. 將專案推到 GitHub。
-2. 登入 [Render](https://render.com)，選 **New → Blueprint**。
-3. 選擇你的 GitHub repo，Render 會讀取 `render.yaml` 自動建立服務。
-4. 部署完成後即可使用 Render 提供的網址。
+2. Render → **New → Blueprint** → 選擇 repo，會讀取 `render.yaml` 自動建立服務。
 
 ### 方法二：手動建立 Web Service
 
-1. Render 選 **New → Web Service**，連結 GitHub repo。
-2. 設定：
+| 欄位 | 值 |
+| --- | --- |
+| Language | Python 3 |
+| Build Command | `pip install -r requirements.txt` |
+| Start Command | `uvicorn app:app --host 0.0.0.0 --port $PORT` |
+| Health Check Path | `/healthz` |
+| 環境變數 | `PYTHON_VERSION = 3.11.9`（選用） |
 
-   | 欄位 | 值 |
-   | --- | --- |
-   | Runtime | Python 3 |
-   | Build Command | `pip install -r requirements.txt` |
-   | Start Command | `python app.py` |
+> ⚠️ Start Command 請用 `uvicorn app:app ...`，不要用 `python app.py`；兩者都能跑，
+> 但 uvicorn 指令是 Render 上較標準的做法。
 
-3. 在 **Environment** 新增 `PYTHON_VERSION = 3.11.9`（選用，固定 Python 版本）。
-4. 按 **Create Web Service**。
+## 驗證 PWA
 
-> `app.py` 會自動讀取 Render 提供的 `PORT` 環境變數，並綁定 `0.0.0.0`，不需額外設定。
+1. 用 Chrome 開啟部署網址 → F12 → **Application** 分頁。
+2. **Manifest**：確認名稱、圖示無錯誤。
+3. **Service Workers**：狀態應為 *activated and is running*。
+4. 網址列右側會出現「安裝」圖示；也可執行 **Lighthouse → PWA** 檢測。
 
 ## 環境變數（選用）
 
@@ -66,10 +95,9 @@ python app.py
 
 ## 注意事項
 
-- Render 免費方案閒置約 15 分鐘後會休眠，再次開啟時需等待數十秒喚醒。
-- 程式以 `verify=False` 下載資料（沿用原始設定，因部分政府網站憑證鏈不完整）。
-  若資料來源憑證正常，建議改為 `verify=True`。
-- 下載的資料僅在記憶體中處理，不會長期保存於伺服器。
+- Render 免費方案閒置約 15 分鐘後會休眠，再次開啟需等待數十秒。
+- 程式以 `verify=False` 下載資料（沿用原始設定）；若來源憑證正常，建議改為 `verify=True`。
+- 更新 `sw.js` 時，請調整檔內的 `VERSION` 讓舊快取失效。
 
 ## 授權
 
